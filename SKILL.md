@@ -111,43 +111,63 @@ When this skill is installed, your agent should follow these instructions:
    - Add the report ID to `notified_report_ids` in state
 6. If no pending reports → call `POST https://app.clawmentor.ai/api/mentee/bootstrap` to check for any mentor updates not yet queued for this user. If bootstrap returns `bootstrapped > 0`, go back to step 3 and surface the new reports. Otherwise → return `HEARTBEAT_OK`
 
-**Notification message format:**
+**Notification message format** (keep it short — full analysis happens when user asks to see it):
 ```
-🔥 New mentor update ready!
+🔥 New update from {mentor_name}!
 
-**{mentor_name}** · {risk_emoji} {risk_level_display} risk
-
-{plain_english_summary}
-
-Say **"show my mentor report"** to see the full details.
-Or: **"apply mentor report"** / **"skip mentor report"**
+They've pushed a new version of their setup. Say "show my mentor report" and I'll fetch it, compare it against your current setup, and give you a personalized breakdown of what it means for you.
 ```
-
-Risk emoji: LOW → 🟢, MEDIUM → 🟡, HIGH → 🔴
 
 ### Command: "show my mentor report" / "my mentor reports" / "check my reports"
 
 1. Call `GET https://app.clawmentor.ai/api/mentee/reports`
 2. If no pending reports: "No new mentor reports. You're up to date! ✅"
-3. For each pending report, show (use bullet lists — NOT markdown tables, they render poorly on Telegram and most channels):
-   ```
-   📋 Report from {mentor_name} — {date}
-   Risk: {risk_level} {risk_emoji}
+3. For each pending report, **perform a LOCAL compatibility analysis** (do NOT display the backend's `plain_english_summary` — it is just a placeholder):
 
-   {plain_english_summary}
+**Step A — Fetch the mentor's package:**
+Call `GET https://app.clawmentor.ai/api/mentee/package?packageId={report.package_id}` with your API key.
+This returns the mentor's raw files: `AGENTS.md`, `skills.md`, `cron-patterns.json`.
 
-   Skills to add ({N}):
-   • {skill_name} {risk_emoji} — {what_it_does}
-   • ...
+**Step B — Read your own current setup:**
+- List `~/.openclaw/skills/` — what skills do you already have installed?
+- Read `~/.openclaw/workspace/AGENTS.md` — how do you currently operate?
+- Read `~/.openclaw/claw-mentor/state.json` — any saved user_profile (goals, context)?
+- Draw on everything you know about this user from your conversations, workspace files, and active projects
 
-   Skills to modify: {names or "none"}
-   Skills to remove: {names or "none"}
-   Permissions being added: {comma-separated list or "none"}
+**Step C — Analyze the gap yourself:**
+You are the LLM. You have context the backend never could. Work through these:
+- Which of the mentor's skills do you NOT currently have installed? Those are candidates to add.
+- For each candidate skill: what would it concretely enable for THIS user? Use what you know about their work, goals, and projects to give specific examples — not generic descriptions.
+- What would change about how you operate day-to-day if this update was applied?
+- What might be worth skipping based on this user's experience level and what they care about?
+- What permissions would be added, and is each one appropriate given what you know about this user?
+- Overall: is this update a good fit for this person right now?
 
-   {recommendation if non-empty}
+**Step D — Present your analysis** (bullet lists only — no markdown tables):
+```
+📋 Update from {mentor_name} — {date}
 
-   Say "apply mentor report" to apply or "skip mentor report" to skip.
-   ```
+[Your plain-English summary of what this update means for THIS user specifically — 2-3 sentences based on their actual context]
+
+What would change for you:
+• [capability or behavior change — phrased in terms of what they can now do/say/get]
+• ...
+
+Skills to add ({N}):
+• skill-name — [what it enables FOR THIS USER, with a specific example from their work]
+• skill-name — [same — personalized]
+• ...
+
+Permissions this would add:
+• [permission] — [plain English reason why]
+
+What you might want to skip:
+• [skill] — [honest reason it may not be needed for their situation]
+
+My take: [One honest sentence — your recommendation as their agent who knows them]
+
+Say "apply mentor report" to apply or "skip mentor report" to skip.
+```
 
 ### Command: "apply mentor report" / "apply [mentor name]'s update"
 
@@ -287,9 +307,10 @@ All endpoints at `https://app.clawmentor.ai`.
     {
       "id": "uuid",
       "created_at": "2026-03-01T10:00:00Z",
-      "risk_level": "low",
-      "plain_english_summary": "...",
-      "skills_to_add": [{ "name": "...", "what_it_does": "...", "permissions_it_needs": [] }],
+      "package_id": "uuid",
+      "plain_english_summary": "placeholder — your agent performs the real analysis locally",
+      "risk_level": null,
+      "skills_to_add": [],
       "skills_to_modify": [],
       "skills_to_remove": [],
       "permission_changes": [],
@@ -300,6 +321,25 @@ All endpoints at `https://app.clawmentor.ai`.
   "subscriptions": [...]
 }
 ```
+**Note:** `risk_level`, `skills_to_add`, and other analysis fields are intentionally empty. Your local agent fetches the package via `/api/mentee/package?packageId={package_id}` and performs the compatibility analysis itself using its knowledge of your actual setup.
+
+### GET /api/mentee/package
+**Auth:** `Authorization: Bearer {CLAW_MENTOR_API_KEY}`  
+**Query param:** `packageId={uuid}` (from the `package_id` field in a report)  
+**Returns:** Raw mentor package files for local analysis:
+```json
+{
+  "packageId": "uuid",
+  "version": "2026-03-01",
+  "mentor": { "id": "...", "name": "Ember 🔥", "handle": "ember" },
+  "files": {
+    "AGENTS.md": "# AGENTS.md — Ember's configuration...",
+    "skills.md": "| skill-name | source | description |...",
+    "cron-patterns.json": {...}
+  }
+}
+```
+Use this to perform local compatibility analysis. Compare the mentor's skills.md against your own installed skills. Read their AGENTS.md to understand their operating approach vs yours.
 
 ### POST /api/mentee/status
 **Auth:** `Authorization: Bearer {CLAW_MENTOR_API_KEY}`  
