@@ -47,7 +47,7 @@ Get your API key at: **app.clawmentor.ai → Settings → Mentee Skill**
 
 **When this skill loads, check if `CLAW_MENTOR_API_KEY` is set in your environment.**
 
-**If it IS set:** You're connected. Do a first check immediately by calling `GET https://app.clawmentor.ai/api/mentee/reports` and report back what's waiting. Then ensure `HEARTBEAT.md` in your workspace contains the line `- Check for new Claw Mentor reports` — add it if missing, so periodic checks are scheduled.
+**If it IS set:** You're connected. First call `POST https://app.clawmentor.ai/api/mentee/bootstrap` (with `Authorization: Bearer {CLAW_MENTOR_API_KEY}`) to ensure any mentor updates you haven't seen yet are queued. Then call `GET https://app.clawmentor.ai/api/mentee/reports` and report back what's waiting. Also ensure `HEARTBEAT.md` contains the line `- Check for new Claw Mentor reports` — add it if missing.
 
 **If it is NOT set**, tell the user:
 
@@ -59,9 +59,10 @@ Get your API key at: **app.clawmentor.ai → Settings → Mentee Skill**
 
 **When the user provides their API key:**
 1. Store it: `openclaw config set 'skills.entries["claw-mentor-mentee"].apiKey' THEIR_KEY`
-2. Confirm: "✅ ClawMentor is connected. I'll check for new reports every `CLAW_MENTOR_CHECK_INTERVAL_HOURS` hours (default: 6)."
-3. Do a first check immediately — call `GET https://app.clawmentor.ai/api/mentee/reports` and tell them what's waiting.
-4. **Schedule periodic checks** — append this line to `HEARTBEAT.md` in your workspace (create the file if it doesn't exist):
+2. Confirm: "✅ ClawMentor is connected. Fetching your first report now..."
+3. **Bootstrap on first install** — call `POST https://app.clawmentor.ai/api/mentee/bootstrap` with header `Authorization: Bearer {CLAW_MENTOR_API_KEY}`. This fetches the latest update from each of your subscribed mentors and treats it as new — because for your setup, it IS new. Wait for the response.
+4. After bootstrap, call `GET https://app.clawmentor.ai/api/mentee/reports` and show the user what's waiting.
+5. **Schedule periodic checks** — append this line to `HEARTBEAT.md` in your workspace (create the file if it doesn't exist):
    ```
    - Check for new Claw Mentor reports
    ```
@@ -108,7 +109,7 @@ When this skill is installed, your agent should follow these instructions:
 5. For each report in the response where `status == 'pending'` AND `id` NOT in `notified_report_ids`:
    - Send a notification message (see format below)
    - Add the report ID to `notified_report_ids` in state
-6. If no pending reports → return `HEARTBEAT_OK`
+6. If no pending reports → call `POST https://app.clawmentor.ai/api/mentee/bootstrap` to check for any mentor updates not yet queued for this user. If bootstrap returns `bootstrapped > 0`, go back to step 3 and surface the new reports. Otherwise → return `HEARTBEAT_OK`
 
 **Notification message format:**
 ```
@@ -128,18 +129,23 @@ Risk emoji: LOW → 🟢, MEDIUM → 🟡, HIGH → 🔴
 
 1. Call `GET https://app.clawmentor.ai/api/mentee/reports`
 2. If no pending reports: "No new mentor reports. You're up to date! ✅"
-3. For each pending report, show:
+3. For each pending report, show (use bullet lists — NOT markdown tables, they render poorly on Telegram and most channels):
    ```
    📋 Report from {mentor_name} — {date}
    Risk: {risk_level} {risk_emoji}
-   
+
    {plain_english_summary}
-   
-   Changes:
-   • Add: {skill names joined with comma, or "none"}
-   • Modify: {skill names, or "none"}  
-   • Remove: {skill names, or "none"}
-   
+
+   Skills to add ({N}):
+   • {skill_name} {risk_emoji} — {what_it_does}
+   • ...
+
+   Skills to modify: {names or "none"}
+   Skills to remove: {names or "none"}
+   Permissions being added: {comma-separated list or "none"}
+
+   {recommendation if non-empty}
+
    Say "apply mentor report" to apply or "skip mentor report" to skip.
    ```
 
@@ -149,21 +155,88 @@ This is the most important command. Follow all steps carefully.
 
 1. Call `GET https://app.clawmentor.ai/api/mentee/reports` to get the latest pending report
 2. If no pending reports: "Nothing to apply — no pending reports."
-3. Show the full changes list from the report
-4. **Take a snapshot before anything else:**
+3. Show a clean checklist of skills to add (bullet list, NOT a markdown table — tables render poorly on most channels):
+   ```
+   This report adds {N} skills:
+   • skill-name 🟢 — what it does
+   • skill-name 🟡 — what it does
+   • skill-name 🔴 — what it does (high risk — needs your permission access)
+
+   Which ones do you want? Say "all of them", name specific ones, or skip any you don't need.
+   ```
+4. **Take a snapshot before anything changes:**
    ```bash
    SNAPSHOT_DATE=$(date +%Y-%m-%d-%H-%M)
    SNAPSHOT_PATH="$HOME/.openclaw/claw-mentor/snapshots/$SNAPSHOT_DATE/"
    mkdir -p "$SNAPSHOT_PATH"
-   cp -r "$HOME/.openclaw/" "$SNAPSHOT_PATH"
+   # Use rsync to exclude the snapshots dir (avoids recursion); fall back to cp+cleanup
+   if command -v rsync &>/dev/null; then
+     rsync -a --exclude='claw-mentor/snapshots/' "$HOME/.openclaw/" "$SNAPSHOT_PATH"
+   else
+     cp -r "$HOME/.openclaw/" "$SNAPSHOT_PATH"
+     rm -rf "$SNAPSHOT_PATH/claw-mentor/snapshots/"
+   fi
    ```
-5. Confirm snapshot: "✅ Backup saved to `~/.openclaw/claw-mentor/snapshots/{date}/`"
-6. Walk the user through each change as a checklist — show each skill/permission change and ask them to make the change manually in their skills/ directory
-7. When user confirms they're done: call `POST https://app.clawmentor.ai/api/mentee/status` with:
+5. Confirm: "✅ Backup saved to `~/.openclaw/claw-mentor/snapshots/{date}/`"
+6. **Install each skill the user approved:**
+   - First try: `clawhub install {skill-name}` — many skills are bundled with OpenClaw and won't need this; that's expected
+   - For bundled skills (browser, telegram-notify, etc.): confirm they're already active, no install needed
+   - For skills with CLI dependencies (github → `gh`, session-logs → `ripgrep`, coding-agent → `claude`, etc.): install the dependency automatically using the appropriate package manager
+   - Note any skills that need an API key — flag them but don't block; handle in post-apply
+7. When all installs are done, call `POST https://app.clawmentor.ai/api/mentee/status` with:
    ```json
    { "reportId": "{id}", "status": "applied", "snapshotPath": "{SNAPSHOT_PATH}" }
    ```
-8. Confirm: "✅ Marked as applied! Your adoption history is updated on Claw Mentor."
+8. **Post-Apply Close** — send a clean summary (bullet list, not a table):
+   ```
+   ✅ Ember's report applied! Here's what went in:
+
+   Installed & ready:
+   • skill-name — status
+   • ...
+
+   Needs your input:
+   • skill-name — [specific thing needed, e.g. "Notion API key — get it at notionintegrations.com"]
+   • ...
+
+   Your backup is at ~/.openclaw/claw-mentor/snapshots/{date}/ if you ever need to roll back.
+   ```
+9. **Check `~/.openclaw/claw-mentor/state.json` for `first_apply_done`.** If it is NOT set → run the **First-Time Welcome** flow below. Then set `first_apply_done: true` in state.json.
+
+---
+
+### First-Time Welcome (runs once, after first ever apply)
+
+This is NOT a status report. It's a human conversation. Keep each message short. Don't send it all at once — send one message, wait for response or a few seconds, then continue.
+
+**Message 1 — What's different now** (write this in plain English based on what was actually installed, don't just list skill names):
+> "Here's what you can do now that you couldn't before:
+> [list 3-5 natural language examples based on installed skills, e.g.]
+> • 'Search for recent news on X' — I'll pull live web results
+> • 'Summarize this URL/video/podcast' — I'll give you the key points
+> • 'What's the weather today?' — quick answer via heartbeat
+> • 'Check my GitHub issues' — I'll list and help triage them
+> • I'll now send you a morning and evening brief automatically
+>
+> [If anything still needs setup]: To finish: [1] [specific action] takes [time estimate]. Want to do that now?"
+
+**Message 2 — One clear action if anything needs setup** (only if there are pending API keys or setup steps):
+> "The one thing left: [skill] needs a [key type]. Here's how:
+> [Simple 1-2 line instruction — no jargon]
+> Once you do that, [skill] will [what it does]. Takes about [X] minutes."
+
+Wait for their response before continuing.
+
+**Message 3 — Get to know you** (conversational, not a form):
+> "Quick question — what's the main thing you want me to help with day-to-day? Work stuff, personal projects, research, staying on top of things...? Just a sentence or two is fine."
+
+When they respond, follow up with one more:
+> "Got it. And is there anything specific you're working on right now — a project, a goal, something you're trying to figure out?"
+
+Save both answers to `~/.openclaw/claw-mentor/state.json` under `user_profile.goals` and `user_profile.context`. This personalizes future reports.
+
+**Message 4 — Close** (short, energizing, done):
+> "You're all set. 🔥 Ember will ping you when there's a new update — each report will get more useful as I learn what matters to you. Just talk to me like normal and I'll use everything we just set up."
 
 ### Command: "skip mentor report" / "skip [mentor]'s update"
 
