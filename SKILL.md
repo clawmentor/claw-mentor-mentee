@@ -47,7 +47,7 @@ Get your API key at: **app.clawmentor.ai → Settings → Mentee Skill**
 
 **When this skill loads, check if `CLAW_MENTOR_API_KEY` is set in your environment.**
 
-**If it IS set:** You're connected. Do a first check immediately by calling `GET https://app.clawmentor.ai/api/mentee/reports` and report back what's waiting.
+**If it IS set:** You're connected. Do a first check immediately by calling `GET https://app.clawmentor.ai/api/mentee/reports` and report back what's waiting. Then ensure `HEARTBEAT.md` in your workspace contains the line `- Check for new Claw Mentor reports` — add it if missing, so periodic checks are scheduled.
 
 **If it is NOT set**, tell the user:
 
@@ -61,6 +61,11 @@ Get your API key at: **app.clawmentor.ai → Settings → Mentee Skill**
 1. Store it: `openclaw config set 'skills.entries["claw-mentor-mentee"].apiKey' THEIR_KEY`
 2. Confirm: "✅ ClawMentor is connected. I'll check for new reports every `CLAW_MENTOR_CHECK_INTERVAL_HOURS` hours (default: 6)."
 3. Do a first check immediately — call `GET https://app.clawmentor.ai/api/mentee/reports` and tell them what's waiting.
+4. **Schedule periodic checks** — append this line to `HEARTBEAT.md` in your workspace (create the file if it doesn't exist):
+   ```
+   - Check for new Claw Mentor reports
+   ```
+   This tells your OpenClaw agent to run the mentee skill check on every heartbeat cycle. Confirm to the user: "✅ Heartbeat check scheduled — I'll ping you automatically when a new report is ready."
 
 ---
 
@@ -231,6 +236,8 @@ All endpoints at `https://app.clawmentor.ai`.
 ---
 
 ## Troubleshooting
+
+**`clawhub install` rate limited** → ClawHub enforces per-IP download limits. Wait 2–3 minutes and retry. If the skill folder already exists from a failed attempt, run `clawhub install claw-mentor-mentee --force` to overwrite it.
 
 **"Invalid API key"** → Go to app.clawmentor.ai → Settings → Mentee Skill → Generate a new key.
 
