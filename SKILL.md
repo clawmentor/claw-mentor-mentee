@@ -126,7 +126,11 @@ They've pushed a new version of their setup. Say "show my mentor report" and I'l
 
 **Step A — Fetch the mentor's package:**
 Call `GET https://app.clawmentor.ai/api/mentee/package?packageId={report.package_id}` with your API key.
-This returns the mentor's raw files: `AGENTS.md`, `skills.md`, `cron-patterns.json`.
+This returns two sections:
+- `files` — the mentor's authored content: `AGENTS.md`, `skills.md`, `cron-patterns.json`, `CLAW_MENTOR.md`, `privacy-notes.md`
+- `platform` — platform guides: `mentee-integration.md` (the full integration algorithm), `setup-guide.md`, `mentee-skill.md` (detailed operations guide)
+
+For analysis, focus on the `files` section. The `platform` section is used during apply (see below).
 
 **Step B — Read your own current setup:**
 - List `~/.openclaw/skills/` — what skills do you already have installed?
@@ -171,57 +175,29 @@ Say "apply mentor report" to apply or "skip mentor report" to skip.
 
 ### Command: "apply mentor report" / "apply [mentor name]'s update"
 
-This is the most important command. Follow all steps carefully.
+This is the most important command. It uses the full integration algorithm from the platform.
 
 1. Call `GET https://app.clawmentor.ai/api/mentee/reports` to get the latest pending report
 2. If no pending reports: "Nothing to apply — no pending reports."
-3. Show a clean checklist of skills to add (bullet list, NOT a markdown table — tables render poorly on most channels):
-   ```
-   This report adds {N} skills:
-   • skill-name 🟢 — what it does
-   • skill-name 🟡 — what it does
-   • skill-name 🔴 — what it does (high risk — needs your permission access)
-
-   Which ones do you want? Say "all of them", name specific ones, or skip any you don't need.
-   ```
-4. **Take a snapshot before anything changes:**
-   ```bash
-   SNAPSHOT_DATE=$(date +%Y-%m-%d-%H-%M)
-   SNAPSHOT_PATH="$HOME/.openclaw/claw-mentor/snapshots/$SNAPSHOT_DATE/"
-   mkdir -p "$SNAPSHOT_PATH"
-   # Use rsync to exclude the snapshots dir (avoids recursion); fall back to cp+cleanup
-   if command -v rsync &>/dev/null; then
-     rsync -a --exclude='claw-mentor/snapshots/' "$HOME/.openclaw/" "$SNAPSHOT_PATH"
-   else
-     cp -r "$HOME/.openclaw/" "$SNAPSHOT_PATH"
-     rm -rf "$SNAPSHOT_PATH/claw-mentor/snapshots/"
-   fi
-   ```
-5. Confirm: "✅ Backup saved to `~/.openclaw/claw-mentor/snapshots/{date}/`"
-6. **Install each skill the user approved:**
-   - First try: `clawhub install {skill-name}` — many skills are bundled with OpenClaw and won't need this; that's expected
-   - For bundled skills (browser, telegram-notify, etc.): confirm they're already active, no install needed
-   - For skills with CLI dependencies (github → `gh`, session-logs → `ripgrep`, coding-agent → `claude`, etc.): install the dependency automatically using the appropriate package manager
-   - Note any skills that need an API key — flag them but don't block; handle in post-apply
-7. When all installs are done, call `POST https://app.clawmentor.ai/api/mentee/status` with:
+3. **Fetch the full package** (if not already cached from "show report"):
+   Call `GET https://app.clawmentor.ai/api/mentee/package?packageId={report.package_id}`
+4. **Read `platform['mentee-integration.md']` from the package response.**
+   This contains the full 6-phase integration algorithm:
+   - Phase 0: Backup (snapshot your current setup)
+   - Phase 1: Self-Assessment (read and map your human's complete current state)
+   - Phase 2: Update Parsing (understand what the mentor is proposing)
+   - Phase 3: Conflict Analysis (find every collision, overlap, and opportunity)
+   - Phase 4: Merge Strategy & Human Approval (present the plan, get explicit approval)
+   - Phase 5: Integration Execution (apply the approved merge carefully)
+   - Phase 6: Post-Integration Report (tell your human what changed)
+5. **Follow `mentee-integration.md` step by step.** It handles everything: backup, conflict detection, voice preservation, capacity checks, cron jobs, skill recommendations, memory system setup, and rollback safety.
+6. After integration completes, call `POST https://app.clawmentor.ai/api/mentee/status` with:
    ```json
-   { "reportId": "{id}", "status": "applied", "snapshotPath": "{SNAPSHOT_PATH}" }
+   { "reportId": "{id}", "status": "applied", "snapshotPath": "{backup_path}" }
    ```
-8. **Post-Apply Close** — send a clean summary (bullet list, not a table):
-   ```
-   ✅ Ember's report applied! Here's what went in:
+7. **Check `~/.openclaw/claw-mentor/state.json` for `first_apply_done`.** If it is NOT set → run the **First-Time Welcome** flow below. Then set `first_apply_done: true` in state.json.
 
-   Installed & ready:
-   • skill-name — status
-   • ...
-
-   Needs your input:
-   • skill-name — [specific thing needed, e.g. "Notion API key — get it at notionintegrations.com"]
-   • ...
-
-   Your backup is at ~/.openclaw/claw-mentor/snapshots/{date}/ if you ever need to roll back.
-   ```
-9. **Check `~/.openclaw/claw-mentor/state.json` for `first_apply_done`.** If it is NOT set → run the **First-Time Welcome** flow below. Then set `first_apply_done: true` in state.json.
+**Important:** The integration algorithm in `mentee-integration.md` is comprehensive. Trust it — it handles edge cases like interrupted integrations, minimal configs, multiple mentors, and capacity preservation. Don't skip phases or simplify the process.
 
 ---
 
@@ -326,20 +302,29 @@ All endpoints at `https://app.clawmentor.ai`.
 ### GET /api/mentee/package
 **Auth:** `Authorization: Bearer {CLAW_MENTOR_API_KEY}`  
 **Query param:** `packageId={uuid}` (from the `package_id` field in a report)  
-**Returns:** Raw mentor package files for local analysis:
+**Returns:** Two sections — mentor-authored content and platform guides:
 ```json
 {
   "packageId": "uuid",
   "version": "2026-03-01",
   "mentor": { "id": "...", "name": "Ember 🔥", "handle": "ember" },
   "files": {
-    "AGENTS.md": "# AGENTS.md — Ember's configuration...",
-    "skills.md": "| skill-name | source | description |...",
-    "cron-patterns.json": {...}
-  }
+    "CLAW_MENTOR.md": "overview and version notes",
+    "AGENTS.md": "annotated configuration with reasoning",
+    "skills.md": "curated skill recommendations with tiers",
+    "cron-patterns.json": { "jobs": [...] },
+    "privacy-notes.md": "what this package reads/writes"
+  },
+  "platform": {
+    "mentee-integration.md": "full 6-phase integration algorithm",
+    "setup-guide.md": "first-time setup guide",
+    "mentee-skill.md": "detailed daily operations guide"
+  },
+  "fetchedAt": "2026-03-01T10:00:00Z"
 }
 ```
-Use this to perform local compatibility analysis. Compare the mentor's skills.md against your own installed skills. Read their AGENTS.md to understand their operating approach vs yours.
+- **`files`** = mentor-authored content (unique per mentor). Use for local compatibility analysis.
+- **`platform`** = platform guides (same for all mentors). Use `mentee-integration.md` during apply. Use `mentee-skill.md` for detailed operational reference beyond what this SKILL.md covers.
 
 ### POST /api/mentee/status
 **Auth:** `Authorization: Bearer {CLAW_MENTOR_API_KEY}`  
