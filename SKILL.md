@@ -244,6 +244,6 @@ All endpoints at `https://app.clawmentor.ai`.
 
 ## Source
 
-Open source (auditable): [github.com/sageassistant26-hash/claw-mentor-mentee](https://github.com/sageassistant26-hash/claw-mentor-mentee)
+Open source (auditable): [github.com/clawmentor/claw-mentor-mentee](https://github.com/clawmentor/claw-mentor-mentee)
 
 Questions or issues? Open a GitHub issue or email hello@clawmentor.ai.
