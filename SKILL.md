@@ -1,3 +1,9 @@
+---
+name: claw-mentor-mentee
+description: Safe OpenClaw evolution — get safety-checked compatibility reports from expert builders delivered directly to your agent. Apply or skip updates, with automatic rollback protection.
+metadata: {"openclaw": {"emoji": "🔥", "primaryEnv": "CLAW_MENTOR_API_KEY", "homepage": "https://clawmentor.ai"}}
+---
+
 # Claw Mentor — Mentee Skill
 
 > Bring your mentor's updates directly into your OpenClaw agent. Get notified when a new compatibility report is ready, review it in plain English, and apply or skip — all from your OpenClaw chat.
@@ -27,24 +33,45 @@ This skill connects your local OpenClaw agent to Claw Mentor. Your agent checks 
 
 ## Installation
 
-1. **Subscribe** at [app.clawmentor.ai](https://app.clawmentor.ai) and complete onboarding
-2. **Generate your API key** in Settings → Mentee Skill → "Generate API Key"
-3. **Download this skill:** `skills/claw-mentor-mentee/SKILL.md`
-4. **Add your config** (see Configuration below)
-5. **Add to your AGENTS.md:** reference this skill in your skills list
+```bash
+clawhub install claw-mentor-mentee
+```
+
+Start a new OpenClaw session after installing. Your agent will guide you through the API key setup on first use.
+
+Get your API key at: **app.clawmentor.ai → Settings → Mentee Skill**
+
+---
+
+## Setup (First Run)
+
+**When this skill loads, check if `CLAW_MENTOR_API_KEY` is set in your environment.**
+
+**If it IS set:** You're connected. Do a first check immediately by calling `GET https://app.clawmentor.ai/api/mentee/reports` and report back what's waiting.
+
+**If it is NOT set**, tell the user:
+
+> "To activate ClawMentor, I need your API key.
+> 
+> 👉 Get it at **app.clawmentor.ai → Settings → Mentee Skill → Generate API Key**
+> 
+> Once you have it, share it here and I'll configure it."
+
+**When the user provides their API key:**
+1. Store it: `openclaw config set 'skills.entries["claw-mentor-mentee"].apiKey' THEIR_KEY`
+2. Confirm: "✅ ClawMentor is connected. I'll check for new reports every `CLAW_MENTOR_CHECK_INTERVAL_HOURS` hours (default: 6)."
+3. Do a first check immediately — call `GET https://app.clawmentor.ai/api/mentee/reports` and tell them what's waiting.
 
 ---
 
 ## Configuration
 
-Add these two lines to your OpenClaw environment or to the skill's config section:
+| Variable | Where it comes from | Default |
+|---|---|---|
+| `CLAW_MENTOR_API_KEY` | app.clawmentor.ai → Settings → Mentee Skill | Required |
+| `CLAW_MENTOR_CHECK_INTERVAL_HOURS` | Optional — set in your OpenClaw environment | `6` |
 
-```
-CLAW_MENTOR_API_KEY=your-api-key-from-settings
-CLAW_MENTOR_CHECK_INTERVAL_HOURS=6
-```
-
-Get your API key at **app.clawmentor.ai → Settings → Mentee Skill**.
+OpenClaw stores your API key in `~/.openclaw/openclaw.json` under `skills.entries["claw-mentor-mentee"].apiKey` and automatically injects it as `CLAW_MENTOR_API_KEY` each session.
 
 ---
 
